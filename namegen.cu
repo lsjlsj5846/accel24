@@ -204,6 +204,9 @@ __device__ float _gpu_sigmoid(float x){
   return 1.0 / (1.0 + expf(-x));
 }
 
+__device__ float _gpu_tanh(float x){
+  return tanhf(x);
+}
 /*
  * SGEMV
  * input1: [N x K]
@@ -336,7 +339,15 @@ void namegen_initialize(int N, char *parameter_fname) {
 
   hidden0 = new Tensor({HIDDEN_DIM, N}, true);
   hidden1 = new Tensor({HIDDEN_DIM, N}, true);
+  r0 = new Tensor({N, HIDDEN_DIM});
+  z0 = new Tensor({N, HIDDEN_DIM});
+  n0 = new Tensor({N, HIDDEN_DIM});
 
+  r1 = new Tensor({N, HIDDEN_DIM});
+  z1 = new Tensor({N, HIDDEN_DIM});
+  n1 = new Tensor({N, HIDDEN_DIM});
+  // h1 = new Tensor({N, HIDDEN_DIM});
+  
   // r0 = new Tensor({N, HIDDEN_DIM});
   // r1 = new Tensor({N, HIDDEN_DIM});
   // z0 = new Tensor({N, HIDDEN_DIM});
@@ -392,10 +403,10 @@ void namegen_initialize(int N, char *parameter_fname) {
   char_prob = new Tensor({NUM_CHAR, N});
 }
 
-__global__ void fill_gpu_value(const int N, float *buf_gpu, const int _value){
+__global__ void fill_gpu_value(const int N, float *buf_gpu, const float _value){
     int tidx = blockIdx.x * blockDim.x + threadIdx.x;
     if (tidx >= N) return;
-    buf_gpu[tidx] = (float)_value;
+    buf_gpu[tidx] = _value;
     // printf("************ %f %d \n", buf_gpu[tidx], tidx);
   }
 
@@ -406,7 +417,65 @@ __global__ void gpu_embedding(const int N, const float *i_buf_gpu,
 
   if (r>= EMBEDDING_DIM || c >= N) return;
   // TODO: vernerable due to the typecasting
-  o_buf_gpu[r * N + c] = w_buf_gpu[(int)(i_buf_gpu[r]) * N + c];
+  // o_buf_gpu[r * N + c] = w_buf_gpu[(int)(i_buf_gpu[r]) * N + c];
+  o_buf_gpu[r*N + c] = w_buf_gpu[r* N + (int)(i_buf_gpu[c])];
+}
+
+__global__ void gpu_mmbmmbs(const int N, const int K1, const int K2,
+                           float* W1, float* X1, float* b1,
+                           float* W2, float* X2, float* b2,
+                           float* output
+                           ){
+int r = blockIdx.y * blockDim.y + threadIdx.y;
+int c = blockIdx.x * blockDim.x + threadIdx.x;
+
+float sum = 0.0;
+
+//TODO: Check!! is ++K right?
+// #pragma unroll 128
+for (int k=0; k<K1; ++k) 
+{sum += W1[r * HIDDEN_DIM + k] * X1[k * K1 + c];}
+
+// #pragma unroll 128
+for (int k=0; k<K2; ++k) 
+{sum += W2[r * HIDDEN_DIM + k] * X2[k * K2 + c];}
+sum += b1[r] + b2[r];
+output[r * N + c] += _gpu_sigmoid(sum);
+}
+
+__global__ void gpu_mmbrmmbt(const int N, const int K1, const int K2,
+                           float* W1, float* X1, float* b1,
+                           float* W2, float* X2, float* b2,
+                           float* r1, float* output
+                           ){
+int r = blockIdx.y * blockDim.y + threadIdx.y;
+int c = blockIdx.x * blockDim.x + threadIdx.x;
+
+float sum = 0.0;
+
+//TODO: Check!! is ++K right?
+// #pragma unroll 128
+for (int k=0; k<K2; ++k) 
+{sum += W2[r * HIDDEN_DIM + k] * X2[k * K2 + c];}
+sum *= r1[c];
+// #pragma unroll 128
+for (int k=0; k<K1; ++k) 
+{sum += W1[r * HIDDEN_DIM + k] * X1[k * K1 + c];}
+
+sum += b1[r] + b2[r];
+output[r * N + c] += _gpu_tanh(sum);
+}
+
+__global__ void gpu_compute_h(const int N, float* zt, float* nt,
+                              float* ht
+                           ){
+int r = blockIdx.y * blockDim.y + threadIdx.y;
+int c = blockIdx.x * blockDim.x + threadIdx.x;
+
+// float sum = 0.0;
+// TODO: this function is too simple we can reduce the number of threads
+float _zt = zt[r*N + c];
+ht[r*N + c] = (1-_zt) * nt[r*N + c] + _zt * ht[r*N + c];
 }
 
 
@@ -431,7 +500,7 @@ void namegen(int N, float *random_floats, char *output) {
   // hidden1->set_zero();
   dim3 gridDim_1((N+1023) / 1024);
   dim3 blockDim_1(1024);
-  fill_gpu_value<<<gridDim_1, blockDim_1>>>(N, input->buf_gpu, SOS);
+  fill_gpu_value<<<gridDim_1, blockDim_1>>>(N, input->buf_gpu, (float)SOS);
   
 
   for (int l = 0; l < MAX_LEN; l++) {
@@ -441,6 +510,58 @@ void namegen(int N, float *random_floats, char *output) {
     dim3 gridDim_2( (N + 31)/32, (EMBEDDING_DIM+31)/32);
     gpu_embedding<<<gridDim_2, blockDim_2>>>(N, input->buf_gpu, character_embedding->buf_gpu,
                   emb_out->buf_gpu);
+    
+    //////////////////////////////////////////////
+    /* Layer 1: input : emb_out & hid: hidden 0*/
+    //////////////////////////////////////////////
+    
+    dim3 blockDim_3(32,32);
+    dim3 gridDim_3( (N + 31)/32, (HIDDEN_DIM+31)/32);
+    gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
+                W_ir0->buf_gpu, emb_out->buf_gpu, b_ir0->buf_gpu,
+                W_hr0->buf_gpu, hidden0->buf_gpu, b_hr0->buf_gpu,
+                r0->buf_gpu);
+
+    gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
+                W_iz0->buf_gpu, emb_out->buf_gpu, b_iz0->buf_gpu,
+                W_hz0->buf_gpu, hidden0->buf_gpu, b_hz0->buf_gpu,
+                z0->buf_gpu);
+
+    gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
+                W_in0->buf_gpu, emb_out->buf_gpu, b_in0->buf_gpu,
+                W_hn0->buf_gpu, hidden0->buf_gpu, b_hn0->buf_gpu,
+                r0->buf_gpu, n0->buf_gpu);
+
+    //TODO: is it able to overwrite hidden0?
+    gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z0->buf_gpu, n0->buf_gpu,
+                                              hidden0->buf_gpu);
+
+    //////////////////////////////////////////////
+    /* Layer 2: input : hidden0 & hid: hidden 1*/
+    //////////////////////////////////////////////
+
+    gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
+                W_ir1->buf_gpu, hidden0->buf_gpu, b_ir1->buf_gpu,
+                W_hr1->buf_gpu, hidden1->buf_gpu, b_hr1->buf_gpu,
+                r1->buf_gpu);
+
+    gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
+                W_iz1->buf_gpu, hidden0->buf_gpu, b_iz1->buf_gpu,
+                W_hz1->buf_gpu, hidden1->buf_gpu, b_hz1->buf_gpu,
+                z1->buf_gpu);
+
+    gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
+                W_in1->buf_gpu, hidden0->buf_gpu, b_in1->buf_gpu,
+                W_hn1->buf_gpu, hidden1->buf_gpu, b_hn1->buf_gpu,
+                r1->buf_gpu, n1->buf_gpu);
+
+    //TODO: is it able to overwrite hidden0?
+    gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z1->buf_gpu, n1->buf_gpu,
+                                              hidden1->buf_gpu);
+
+    
+
+    
 
   //   /* First layer r */
   //   matvec(W_ir0, emb_out, rtmp00);

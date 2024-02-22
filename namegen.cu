@@ -517,20 +517,21 @@ __global__ void softmax_kernel(float *input, float *output, int N) {
   output[tid * N + bn] = input[tid * N + bn] / _sum;  
 }
 
-__global__ void gpu_random_select(int N, int ll, float* cp, float* rf, float* output){
+__global__ void gpu_random_select(int N, int ll, float* cp, float* rf, 
+char* output, float* input){
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
-
+  if (tid >=N) return;
   float psum = 0.0;
   for (int i=0; i< NUM_CHAR; i++){
     psum += cp[i*N + tid];
     if (psum > rf[tid * MAX_LEN + ll]){
-      output[ll * (MAX_LEN+1) + tid] = i;
+      output[ll * (MAX_LEN+1) + tid] = (char)i;
+      input[tid] = (float)i;
       return ;
     }
   }
-  output[ll * (MAX_LEN+1) + tid] = NUM_CHAR-1;
-
-
+  output[ll * (MAX_LEN+1) + tid] = (char)(NUM_CHAR-1);
+  input[tid] = (float)(NUM_CHAR - 1);
 }
 
 /*
@@ -545,7 +546,7 @@ void namegen(int N, float *random_floats, char *output) {
   // memcpy(rfloats->buf, random_floats, N * MAX_LEN * sizeof(float));
   CHECK_CUDA(cudaMemcpy(rfloats->buf_gpu, random_floats, N * MAX_LEN * sizeof(float),
                         cudaMemcpyHostToDevice));
-  float* g_output;
+  char* g_output;
   memset(output, 0, N * (MAX_LEN + 1) * sizeof(char));
   CHECK_CUDA(cudaMalloc(&g_output, N * (MAX_LEN + 1) * sizeof(char)));
 
@@ -630,7 +631,7 @@ void namegen(int N, float *random_floats, char *output) {
     dim3 blockDim_rand(1024);
     dim3 gridDim_rand((N+1023)/1024);
     gpu_random_select<<<gridDim_rand, blockDim_rand>>>(
-      N, l, char_prob->buf_gpu, rfloats->buf_gpu, g_output
+      N, l, char_prob->buf_gpu, rfloats->buf_gpu, g_output, input->buf_gpu
     );
 
     // int selected_char = random_select(char_prob, rfloats, n * MAX_LEN + l);
@@ -715,6 +716,9 @@ void namegen(int N, float *random_floats, char *output) {
   //   if (selected_char == EOS)
   //     break;
   }
+CHECK_CUDA(cudaMemcpy(output, g_output, N * (MAX_LEN+1) * sizeof(char),
+                        cudaMemcpyDeviceToHost));
+
 }
 
 /*

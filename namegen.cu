@@ -117,6 +117,7 @@ void embedding(Tensor *input, Tensor *weight, Tensor *output) {
   }
 }
 
+
 /*
  * Elementwise addition
  * input1: [*]
@@ -370,10 +371,11 @@ void namegen_initialize(int N, char *parameter_fname) {
   char_prob = new Tensor({N, NUM_CHAR});
 }
 
-__global__ void fill_gpu_value(const int N, Tensor *t_gpu, const float _value){
+__global__ void fill_gpu_value(const int N, float *buf_gpu, const int _value){
     int tidx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tidx > N) return;
-    t_gpu->buf_gpu[tidx] = _value;
+    if (tidx >= N) return;
+    buf_gpu[tidx] = (float)_value;
+    // printf("************ %f %d \n", buf_gpu[tidx], tidx);
   }
 
 /*
@@ -391,92 +393,96 @@ void namegen(int N, float *random_floats, char *output) {
   /* Generate N names */
   /* Initialize input and hidden vector. */
   /* One hidden vector for each GRU layer */
-  input->buf[0] = SOS;
+  // input->buf[0] = SOS;
   // hidden0->set_zero();
   // hidden1->set_zero();
+  dim3 gridDim((N+1023) / 1024);
+  dim3 blockDim(1024);
+  fill_gpu_value<<<gridDim, blockDim>>>(N, input->buf_gpu, SOS);
+  
 
   for (int l = 0; l < MAX_LEN; l++) {
     /* Embedding */
     embedding(input, character_embedding, emb_out);
 
-    /* First layer r */
-    matvec(W_ir0, emb_out, rtmp00);
-    matvec(W_hr0, hidden0, rtmp01);
-    elemwise_add(rtmp00, b_ir0, rtmp02);
-    elemwise_add(rtmp02, rtmp01, rtmp03);
-    elemwise_add(rtmp03, b_hr0, rtmp04);
-    elemwise_sigmoid(rtmp04, r0);
+  //   /* First layer r */
+  //   matvec(W_ir0, emb_out, rtmp00);
+  //   matvec(W_hr0, hidden0, rtmp01);
+  //   elemwise_add(rtmp00, b_ir0, rtmp02);
+  //   elemwise_add(rtmp02, rtmp01, rtmp03);
+  //   elemwise_add(rtmp03, b_hr0, rtmp04);
+  //   elemwise_sigmoid(rtmp04, r0);
 
-    /* First layer z */
-    matvec(W_iz0, emb_out, ztmp00);
-    matvec(W_hz0, hidden0, ztmp01);
-    elemwise_add(ztmp00, b_iz0, ztmp02);
-    elemwise_add(ztmp02, ztmp01, ztmp03);
-    elemwise_add(ztmp03, b_hz0, ztmp04);
-    elemwise_sigmoid(ztmp04, z0);
+  //   /* First layer z */
+  //   matvec(W_iz0, emb_out, ztmp00);
+  //   matvec(W_hz0, hidden0, ztmp01);
+  //   elemwise_add(ztmp00, b_iz0, ztmp02);
+  //   elemwise_add(ztmp02, ztmp01, ztmp03);
+  //   elemwise_add(ztmp03, b_hz0, ztmp04);
+  //   elemwise_sigmoid(ztmp04, z0);
 
-    /* First layer n */
-    matvec(W_in0, emb_out, ntmp00);
-    elemwise_add(ntmp00, b_in0, ntmp01);
-    matvec(W_hn0, hidden0, ntmp02);
-    elemwise_add(ntmp02, b_hn0, ntmp03);
-    elemwise_mul(r0, ntmp03, ntmp04);
-    elemwise_add(ntmp01, ntmp04, ntmp05);
-    elemwise_tanh(ntmp05, n0);
+  //   /* First layer n */
+  //   matvec(W_in0, emb_out, ntmp00);
+  //   elemwise_add(ntmp00, b_in0, ntmp01);
+  //   matvec(W_hn0, hidden0, ntmp02);
+  //   elemwise_add(ntmp02, b_hn0, ntmp03);
+  //   elemwise_mul(r0, ntmp03, ntmp04);
+  //   elemwise_add(ntmp01, ntmp04, ntmp05);
+  //   elemwise_tanh(ntmp05, n0);
 
-    /* First layer h (hidden) */
-    elemwise_oneminus(z0, htmp00);
-    elemwise_mul(htmp00, n0, htmp01);
-    elemwise_mul(z0, hidden0, htmp02);
-    elemwise_add(htmp01, htmp02, hidden0);
+  //   /* First layer h (hidden) */
+  //   elemwise_oneminus(z0, htmp00);
+  //   elemwise_mul(htmp00, n0, htmp01);
+  //   elemwise_mul(z0, hidden0, htmp02);
+  //   elemwise_add(htmp01, htmp02, hidden0);
 
-    /* Second layer r */
-    matvec(W_ir1, hidden0, rtmp10);
-    matvec(W_hr1, hidden1, rtmp11);
-    elemwise_add(rtmp10, b_ir1, rtmp12);
-    elemwise_add(rtmp12, rtmp11, rtmp13);
-    elemwise_add(rtmp13, b_hr1, rtmp14);
-    elemwise_sigmoid(rtmp14, r1);
+  //   /* Second layer r */
+  //   matvec(W_ir1, hidden0, rtmp10);
+  //   matvec(W_hr1, hidden1, rtmp11);
+  //   elemwise_add(rtmp10, b_ir1, rtmp12);
+  //   elemwise_add(rtmp12, rtmp11, rtmp13);
+  //   elemwise_add(rtmp13, b_hr1, rtmp14);
+  //   elemwise_sigmoid(rtmp14, r1);
 
-    /* Second layer z */
-    matvec(W_iz1, hidden0, ztmp10);
-    matvec(W_hz1, hidden1, ztmp11);
-    elemwise_add(ztmp10, b_iz1, ztmp12);
-    elemwise_add(ztmp12, ztmp11, ztmp13);
-    elemwise_add(ztmp13, b_hz1, ztmp14);
-    elemwise_sigmoid(ztmp14, z1);
+  //   /* Second layer z */
+  //   matvec(W_iz1, hidden0, ztmp10);
+  //   matvec(W_hz1, hidden1, ztmp11);
+  //   elemwise_add(ztmp10, b_iz1, ztmp12);
+  //   elemwise_add(ztmp12, ztmp11, ztmp13);
+  //   elemwise_add(ztmp13, b_hz1, ztmp14);
+  //   elemwise_sigmoid(ztmp14, z1);
 
-    /* Second layer n */
-    matvec(W_in1, hidden0, ntmp10);
-    elemwise_add(ntmp10, b_in1, ntmp11);
-    matvec(W_hn1, hidden1, ntmp12);
-    elemwise_add(ntmp12, b_hn1, ntmp13);
-    elemwise_mul(r1, ntmp13, ntmp14);
-    elemwise_add(ntmp11, ntmp14, ntmp15);
-    elemwise_tanh(ntmp15, n1);
+  //   /* Second layer n */
+  //   matvec(W_in1, hidden0, ntmp10);
+  //   elemwise_add(ntmp10, b_in1, ntmp11);
+  //   matvec(W_hn1, hidden1, ntmp12);
+  //   elemwise_add(ntmp12, b_hn1, ntmp13);
+  //   elemwise_mul(r1, ntmp13, ntmp14);
+  //   elemwise_add(ntmp11, ntmp14, ntmp15);
+  //   elemwise_tanh(ntmp15, n1);
 
-    /* Second layer h (hidden) */
-    elemwise_oneminus(z1, htmp10);
-    elemwise_mul(htmp10, n1, htmp11);
-    elemwise_mul(z1, hidden1, htmp12);
-    elemwise_add(htmp11, htmp12, hidden1);
+  //   /* Second layer h (hidden) */
+  //   elemwise_oneminus(z1, htmp10);
+  //   elemwise_mul(htmp10, n1, htmp11);
+  //   elemwise_mul(z1, hidden1, htmp12);
+  //   elemwise_add(htmp11, htmp12, hidden1);
 
-    /* Fully connected layer */
-    matvec(W_fc, hidden1, ftmp0);
-    elemwise_add(ftmp0, b_fc, f);
+  //   /* Fully connected layer */
+  //   matvec(W_fc, hidden1, ftmp0);
+  //   elemwise_add(ftmp0, b_fc, f);
 
-    /* Softmax */
-    softmax(f, char_prob);
+  //   /* Softmax */
+  //   softmax(f, char_prob);
 
-    /* Random select */
-    int selected_char = random_select(char_prob, rfloats, n * MAX_LEN + l);
+  //   /* Random select */
+  //   int selected_char = random_select(char_prob, rfloats, n * MAX_LEN + l);
 
-    output[n * (MAX_LEN + 1) + l] = selected_char;
-    input->buf[0] = selected_char;
+  //   output[n * (MAX_LEN + 1) + l] = selected_char;
+  //   input->buf[0] = selected_char;
 
-    if (selected_char == EOS)
-      break;
-  }
+  //   if (selected_char == EOS)
+  //     break;
+  // }
 }
 
 /*

@@ -608,12 +608,12 @@ void namegen(int N, float *random_floats, char *output) {
     /* Move results to CPU and finalize         */
     //////////////////////////////////////////////
 
-    int selected_char = random_select(char_prob, rfloats, n * MAX_LEN + l);
-    output[n * (MAX_LEN + 1) + l] = selected_char;
-    input->buf[0] = selected_char;
+    // int selected_char = random_select(char_prob, rfloats, n * MAX_LEN + l);
+    // output[n * (MAX_LEN + 1) + l] = selected_char;
+    // input->buf[0] = selected_char;
 
-    if (selected_char == EOS)
-      break;
+    // if (selected_char == EOS)
+    //   break;
 
       
 

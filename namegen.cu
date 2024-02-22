@@ -18,8 +18,9 @@
 
 // You can modify the data structure as you want
 struct Tensor {
-  /* Alloc memory */
+
   Tensor(std::vector<int> shape_) {
+    // No initalization for new Tensors
     ndim = shape_.size();
     for (size_t i = 0; i < ndim; i++) {
       shape[i] = shape_[i];
@@ -29,8 +30,24 @@ struct Tensor {
     buf = (float *)malloc(n * sizeof(float));
     set_zero();
     CHECK_CUDA(cudaMalloc(&buf_gpu, sizeof(float) * n));
-    CHECK_CUDA(cudaMemcpy(buf_gpu, buf, sizeof(float)*n, 
+    // buf = (float *)malloc(n * sizeof(float));
+  }
+
+  /* Alloc memory */
+  Tensor(std::vector<int> shape_, bool _init) {
+    ndim = shape_.size();
+    for (size_t i = 0; i < ndim; i++) {
+      shape[i] = shape_[i];
+    }
+
+    size_t n = num_elem();
+    buf = (float *)malloc(n * sizeof(float));
+    set_zero();
+    CHECK_CUDA(cudaMalloc(&buf_gpu, sizeof(float) * n));
+    if (_init == true){
+      CHECK_CUDA(cudaMemcpy(buf_gpu, buf, sizeof(float)*n, 
     cudaMemcpyHostToDevice));
+    }
     // buf = (float *)malloc(n * sizeof(float));
   }
 
@@ -183,6 +200,10 @@ void elemwise_sigmoid(Tensor *input, Tensor *output) {
   }
 }
 
+__device__ float _gpu_sigmoid(float x){
+  return 1.0 / (1.0 + expf(-x));
+}
+
 /*
  * SGEMV
  * input1: [N x K]
@@ -310,65 +331,65 @@ void namegen_initialize(int N, char *parameter_fname) {
   b_fc = new Tensor({NUM_CHAR}, parameter + OFFSET26);
 
   /* input, activations, output, etc. */
-  input = new Tensor({N, 1});
-  emb_out = new Tensor({N, EMBEDDING_DIM});
+  input = new Tensor({1, N});
+  emb_out = new Tensor({EMBEDDING_DIM, N});
 
-  hidden0 = new Tensor({N, HIDDEN_DIM});
-  hidden1 = new Tensor({N, HIDDEN_DIM});
+  hidden0 = new Tensor({HIDDEN_DIM, N}, true);
+  hidden1 = new Tensor({HIDDEN_DIM, N}, true);
 
-  r0 = new Tensor({N, HIDDEN_DIM});
-  r1 = new Tensor({N, HIDDEN_DIM});
-  z0 = new Tensor({N, HIDDEN_DIM});
-  z1 = new Tensor({N, HIDDEN_DIM});
-  n0 = new Tensor({N, HIDDEN_DIM});
-  n1 = new Tensor({N, HIDDEN_DIM});
-  f = new Tensor({N, NUM_CHAR});
+  // r0 = new Tensor({N, HIDDEN_DIM});
+  // r1 = new Tensor({N, HIDDEN_DIM});
+  // z0 = new Tensor({N, HIDDEN_DIM});
+  // z1 = new Tensor({N, HIDDEN_DIM});
+  // n0 = new Tensor({N, HIDDEN_DIM});
+  // n1 = new Tensor({N, HIDDEN_DIM});
+  // f = new Tensor({N, NUM_CHAR});
 
-  rtmp00 = new Tensor({N, HIDDEN_DIM});
-  rtmp01 = new Tensor({N, HIDDEN_DIM});
-  rtmp02 = new Tensor({N, HIDDEN_DIM});
-  rtmp03 = new Tensor({N, HIDDEN_DIM});
-  rtmp04 = new Tensor({N, HIDDEN_DIM});
-  rtmp10 = new Tensor({N, HIDDEN_DIM});
-  rtmp11 = new Tensor({N, HIDDEN_DIM});
-  rtmp12 = new Tensor({N, HIDDEN_DIM});
-  rtmp13 = new Tensor({N, HIDDEN_DIM});
-  rtmp14 = new Tensor({N, HIDDEN_DIM});
+  // rtmp00 = new Tensor({N, HIDDEN_DIM});
+  // rtmp01 = new Tensor({N, HIDDEN_DIM});
+  // rtmp02 = new Tensor({N, HIDDEN_DIM});
+  // rtmp03 = new Tensor({N, HIDDEN_DIM});
+  // rtmp04 = new Tensor({N, HIDDEN_DIM});
+  // rtmp10 = new Tensor({N, HIDDEN_DIM});
+  // rtmp11 = new Tensor({N, HIDDEN_DIM});
+  // rtmp12 = new Tensor({N, HIDDEN_DIM});
+  // rtmp13 = new Tensor({N, HIDDEN_DIM});
+  // rtmp14 = new Tensor({N, HIDDEN_DIM});
 
-  ztmp00 = new Tensor({N, HIDDEN_DIM});
-  ztmp01 = new Tensor({N, HIDDEN_DIM});
-  ztmp02 = new Tensor({N, HIDDEN_DIM});
-  ztmp03 = new Tensor({N, HIDDEN_DIM});
-  ztmp04 = new Tensor({N, HIDDEN_DIM});
-  ztmp10 = new Tensor({N, HIDDEN_DIM});
-  ztmp11 = new Tensor({N, HIDDEN_DIM});
-  ztmp12 = new Tensor({N, HIDDEN_DIM});
-  ztmp13 = new Tensor({N, HIDDEN_DIM});
-  ztmp14 = new Tensor({N, HIDDEN_DIM});
+  // ztmp00 = new Tensor({N, HIDDEN_DIM});
+  // ztmp01 = new Tensor({N, HIDDEN_DIM});
+  // ztmp02 = new Tensor({N, HIDDEN_DIM});
+  // ztmp03 = new Tensor({N, HIDDEN_DIM});
+  // ztmp04 = new Tensor({N, HIDDEN_DIM});
+  // ztmp10 = new Tensor({N, HIDDEN_DIM});
+  // ztmp11 = new Tensor({N, HIDDEN_DIM});
+  // ztmp12 = new Tensor({N, HIDDEN_DIM});
+  // ztmp13 = new Tensor({N, HIDDEN_DIM});
+  // ztmp14 = new Tensor({N, HIDDEN_DIM});
 
-  ntmp00 = new Tensor({N, HIDDEN_DIM});
-  ntmp01 = new Tensor({N, HIDDEN_DIM});
-  ntmp02 = new Tensor({N, HIDDEN_DIM});
-  ntmp03 = new Tensor({N, HIDDEN_DIM});
-  ntmp04 = new Tensor({N, HIDDEN_DIM});
-  ntmp05 = new Tensor({N, HIDDEN_DIM});
-  ntmp10 = new Tensor({N, HIDDEN_DIM});
-  ntmp11 = new Tensor({N, HIDDEN_DIM});
-  ntmp12 = new Tensor({N, HIDDEN_DIM});
-  ntmp13 = new Tensor({N, HIDDEN_DIM});
-  ntmp14 = new Tensor({N, HIDDEN_DIM});
-  ntmp15 = new Tensor({N, HIDDEN_DIM});
+  // ntmp00 = new Tensor({N, HIDDEN_DIM});
+  // ntmp01 = new Tensor({N, HIDDEN_DIM});
+  // ntmp02 = new Tensor({N, HIDDEN_DIM});
+  // ntmp03 = new Tensor({N, HIDDEN_DIM});
+  // ntmp04 = new Tensor({N, HIDDEN_DIM});
+  // ntmp05 = new Tensor({N, HIDDEN_DIM});
+  // ntmp10 = new Tensor({N, HIDDEN_DIM});
+  // ntmp11 = new Tensor({N, HIDDEN_DIM});
+  // ntmp12 = new Tensor({N, HIDDEN_DIM});
+  // ntmp13 = new Tensor({N, HIDDEN_DIM});
+  // ntmp14 = new Tensor({N, HIDDEN_DIM});
+  // ntmp15 = new Tensor({N, HIDDEN_DIM});
 
-  htmp00 = new Tensor({N, HIDDEN_DIM});
-  htmp01 = new Tensor({N, HIDDEN_DIM});
-  htmp02 = new Tensor({N, HIDDEN_DIM});
-  htmp10 = new Tensor({N, HIDDEN_DIM});
-  htmp11 = new Tensor({N, HIDDEN_DIM});
-  htmp12 = new Tensor({N, HIDDEN_DIM});
+  // htmp00 = new Tensor({N, HIDDEN_DIM});
+  // htmp01 = new Tensor({N, HIDDEN_DIM});
+  // htmp02 = new Tensor({N, HIDDEN_DIM});
+  // htmp10 = new Tensor({N, HIDDEN_DIM});
+  // htmp11 = new Tensor({N, HIDDEN_DIM});
+  // htmp12 = new Tensor({N, HIDDEN_DIM});
 
   rfloats = new Tensor({N * MAX_LEN});
-  ftmp0 = new Tensor({N, NUM_CHAR});
-  char_prob = new Tensor({N, NUM_CHAR});
+  ftmp0 = new Tensor({NUM_CHAR, N});
+  char_prob = new Tensor({NUM_CHAR, N});
 }
 
 __global__ void fill_gpu_value(const int N, float *buf_gpu, const int _value){
@@ -377,6 +398,18 @@ __global__ void fill_gpu_value(const int N, float *buf_gpu, const int _value){
     buf_gpu[tidx] = (float)_value;
     // printf("************ %f %d \n", buf_gpu[tidx], tidx);
   }
+
+__global__ void gpu_embedding(const int N, const float *i_buf_gpu, 
+                              const float *w_buf_gpu, float *o_buf_gpu){
+  int r = blockIdx.y * blockDim.y + threadIdx.y;
+  int c = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (r>= EMBEDDING_DIM || c >= N) return;
+  // TODO: vernerable due to the typecasting
+  o_buf_gpu[r * N + c] = w_buf_gpu[(int)(i_buf_gpu[r]) * N + c];
+}
+
+
 
 /*
  * Generate names.
@@ -396,14 +429,18 @@ void namegen(int N, float *random_floats, char *output) {
   // input->buf[0] = SOS;
   // hidden0->set_zero();
   // hidden1->set_zero();
-  dim3 gridDim((N+1023) / 1024);
-  dim3 blockDim(1024);
-  fill_gpu_value<<<gridDim, blockDim>>>(N, input->buf_gpu, SOS);
+  dim3 gridDim_1((N+1023) / 1024);
+  dim3 blockDim_1(1024);
+  fill_gpu_value<<<gridDim_1, blockDim_1>>>(N, input->buf_gpu, SOS);
   
 
   for (int l = 0; l < MAX_LEN; l++) {
     /* Embedding */
-    embedding(input, character_embedding, emb_out);
+    // embedding(input, character_embedding, emb_out);
+    dim3 blockDim_2(32,32);
+    dim3 gridDim_2( (N + 31)/32, (EMBEDDING_DIM+31)/32);
+    gpu_embedding<<<gridDim_2, blockDim_2>>>(N, input->buf_gpu, character_embedding->buf_gpu,
+                  emb_out->buf_gpu);
 
   //   /* First layer r */
   //   matvec(W_ir0, emb_out, rtmp00);
@@ -482,7 +519,7 @@ void namegen(int N, float *random_floats, char *output) {
 
   //   if (selected_char == EOS)
   //     break;
-  // }
+  }
 }
 
 /*

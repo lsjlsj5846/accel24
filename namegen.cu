@@ -399,7 +399,7 @@ void namegen_initialize(int N, char *parameter_fname) {
   // htmp11 = new Tensor({N, HIDDEN_DIM});
   // htmp12 = new Tensor({N, HIDDEN_DIM});
 
-  rfloats = new Tensor({N * MAX_LEN});
+  rfloats = new Tensor({N, MAX_LEN});
   ftmp0 = new Tensor({NUM_CHAR, N});
   char_prob = new Tensor({NUM_CHAR, N});
 }
@@ -517,6 +517,21 @@ __global__ void softmax_kernel(float *input, float *output, int N) {
   output[tid * N + bn] = input[tid * N + bn] / _sum;  
 }
 
+__global__ void gpu_random_select(int N, int ll, float* cp, float* rf, float* output){
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+  float psum = 0.0;
+  for (int i=0; i< NUM_CHAR; i++){
+    psum += cp[i*N + tid];
+    if (psum > rf[tid * MAX_LEN + ll]){
+      output[ll * (MAX_LEN+1) + tid] = i;
+      return ;
+    }
+  }
+  output[ll * (MAX_LEN+1) + tid] = NUM_CHAR-1;
+
+
+}
 
 /*
  * Generate names.
@@ -527,8 +542,12 @@ __global__ void softmax_kernel(float *input, float *output, int N) {
  */
 void namegen(int N, float *random_floats, char *output) {
 
-  memcpy(rfloats->buf, random_floats, N * MAX_LEN * sizeof(float));
+  // memcpy(rfloats->buf, random_floats, N * MAX_LEN * sizeof(float));
+  CHECK_CUDA(cudaMemcpy(rfloats->buf_gpu, random_floats, N * MAX_LEN * sizeof(float),
+                        cudaMemcpyHostToDevice));
+  float* g_output;
   memset(output, 0, N * (MAX_LEN + 1) * sizeof(char));
+  CHECK_CUDA(cudaMalloc(&g_output, N * (MAX_LEN + 1) * sizeof(char)));
 
   /* Generate N names */
   /* Initialize input and hidden vector. */
@@ -608,14 +627,15 @@ void namegen(int N, float *random_floats, char *output) {
     /* Move results to CPU and finalize         */
     //////////////////////////////////////////////
 
+    dim3 blockDim_rand(1024);
+    dim3 gridDim_rand((N+1023)/1024);
+    gpu_random_select<<<gridDim_rand, blockDim_rand>>>(
+      N, l, char_prob->buf_gpu, rfloats->buf_gpu, g_output
+    );
+
     // int selected_char = random_select(char_prob, rfloats, n * MAX_LEN + l);
     // output[n * (MAX_LEN + 1) + l] = selected_char;
-    // input->buf[0] = selected_char;
-
-    // if (selected_char == EOS)
-    //   break;
-
-      
+    // input->buf[0] = selected_char;      
 
   //   /* First layer r */
   //   matvec(W_ir0, emb_out, rtmp00);

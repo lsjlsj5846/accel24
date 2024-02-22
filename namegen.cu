@@ -66,8 +66,8 @@ struct Tensor {
   }
 
   ~Tensor() {
-    if (buf_gpu != nullptr)
-      CHECK_CUDA(cudaFree(buf_gpu));
+    // if (buf_gpu != nullptr)
+    //   CHECK_CUDA(cudaFree(buf_gpu));
     if (buf != nullptr)
       free(buf);
   }
@@ -133,7 +133,6 @@ void embedding(Tensor *input, Tensor *weight, Tensor *output) {
     output->buf[i] = weight->buf[x * n + i];
   }
 }
-
 
 /*
  * Elementwise addition
@@ -346,6 +345,8 @@ void namegen_initialize(int N, char *parameter_fname) {
   r1 = new Tensor({N, HIDDEN_DIM});
   z1 = new Tensor({N, HIDDEN_DIM});
   n1 = new Tensor({N, HIDDEN_DIM});
+
+  f = new Tensor({N, NUM_CHAR});
   // h1 = new Tensor({N, HIDDEN_DIM});
   
   // r0 = new Tensor({N, HIDDEN_DIM});
@@ -478,6 +479,43 @@ float _zt = zt[r*N + c];
 ht[r*N + c] = (1-_zt) * nt[r*N + c] + _zt * ht[r*N + c];
 }
 
+__global__ void gpu_linear(const int N, const int K,
+                           float* W, float* X, float* b,
+                           float* output
+                           ){
+int r = blockIdx.y * blockDim.y + threadIdx.y;
+int c = blockIdx.x * blockDim.x + threadIdx.x;
+
+float sum = 0.0;
+
+//TODO: Check!! is ++K right?
+// #pragma unroll 128
+for (int k=0; k<K; ++k) 
+{sum += W[r * HIDDEN_DIM + k] * X[k * K + c];}
+sum += b[r];
+output[r * N + c] += sum;
+}
+
+__global__ void softmax_kernel(float *input, float *output, int N) {
+  // Calculate element-wise exponential and store in shared memory
+  __shared__ float L[NUM_CHAR];
+
+  unsigned int tid = threadIdx.x; // local
+  unsigned int bn = blockIdx.x; // block number
+  L[tid] = 0.0;
+  L[tid] = expf(input[tid * N + bn]);
+
+  __syncthreads();
+  float _sum = 0.0;
+  if (tid==0){
+    for (int i=0; i<NUM_CHAR; i++){
+      _sum += L[i];
+    }
+   }
+
+  __syncthreads();
+  output[tid * N + bn] = input[tid * N + bn] / _sum;  
+}
 
 
 /*
@@ -559,9 +597,25 @@ void namegen(int N, float *random_floats, char *output) {
     gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z1->buf_gpu, n1->buf_gpu,
                                               hidden1->buf_gpu);
 
-    
+    //////////////////////////////////////////////
+    /* Linear: input : hidden1                  */
+    //////////////////////////////////////////////
+    gpu_linear<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM,
+    W_fc->buf_gpu, hidden1->buf_gpu, b_fc->buf_gpu,f->buf_gpu);
+    softmax_kernel<<<N, NUM_CHAR>>>(f->buf_gpu, char_prob->buf_gpu, N);
 
-    
+    //////////////////////////////////////////////
+    /* Move results to CPU and finalize         */
+    //////////////////////////////////////////////
+
+    int selected_char = random_select(char_prob, rfloats, n * MAX_LEN + l);
+      output[n * (MAX_LEN + 1) + l] = selected_char;
+      input->buf[0] = selected_char;
+
+      if (selected_char == EOS)
+        break;
+
+      
 
   //   /* First layer r */
   //   matvec(W_ir0, emb_out, rtmp00);

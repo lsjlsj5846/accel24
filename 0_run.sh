@@ -1,1 +1,1 @@
-make && ./run.sh model.bin output.txt 10 10
+make && ./run.sh model.bin output.txt 32 10

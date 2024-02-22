@@ -338,15 +338,16 @@ void namegen_initialize(int N, char *parameter_fname) {
 
   hidden0 = new Tensor({HIDDEN_DIM, N}, true);
   hidden1 = new Tensor({HIDDEN_DIM, N}, true);
-  r0 = new Tensor({N, HIDDEN_DIM});
-  z0 = new Tensor({N, HIDDEN_DIM});
-  n0 = new Tensor({N, HIDDEN_DIM});
 
-  r1 = new Tensor({N, HIDDEN_DIM});
-  z1 = new Tensor({N, HIDDEN_DIM});
-  n1 = new Tensor({N, HIDDEN_DIM});
+  r0 = new Tensor({HIDDEN_DIM, N});
+  z0 = new Tensor({HIDDEN_DIM, N});
+  n0 = new Tensor({HIDDEN_DIM, N});
 
-  f = new Tensor({N, NUM_CHAR});
+  r1 = new Tensor({HIDDEN_DIM, N});
+  z1 = new Tensor({HIDDEN_DIM, N});
+  n1 = new Tensor({HIDDEN_DIM, N});
+
+  f = new Tensor({HIDDEN_DIM, N});
   // h1 = new Tensor({N, HIDDEN_DIM});
   
   // r0 = new Tensor({N, HIDDEN_DIM});
@@ -567,11 +568,11 @@ void namegen(int N, float *random_floats, char *output) {
     dim3 blockDim_2(32,32);
     dim3 gridDim_2( (N + 31)/32, (EMBEDDING_DIM+31)/32);
     gpu_embedding<<<gridDim_2, blockDim_2>>>(N, input->buf_gpu, character_embedding->buf_gpu,
-                  emb_out->buf_gpu);
+                  emb_out->buf_gpu);    
     
-    //////////////////////////////////////////////
-    /* Layer 1: input : emb_out & hid: hidden 0*/
-    //////////////////////////////////////////////
+    // //////////////////////////////////////////////
+    // /* Layer 1: input : emb_out & hid: hidden 0*/
+    // //////////////////////////////////////////////
     
     dim3 blockDim_3(32,32);
     dim3 gridDim_3( (N + 31)/32, (HIDDEN_DIM+31)/32);
@@ -579,12 +580,15 @@ void namegen(int N, float *random_floats, char *output) {
                 W_ir0->buf_gpu, emb_out->buf_gpu, b_ir0->buf_gpu,
                 W_hr0->buf_gpu, hidden0->buf_gpu, b_hr0->buf_gpu,
                 r0->buf_gpu);
-
+    // cudaDeviceSynchronize();
+    // CHECK_CUDA(cudaGetLastError());
+    
     gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
                 W_iz0->buf_gpu, emb_out->buf_gpu, b_iz0->buf_gpu,
                 W_hz0->buf_gpu, hidden0->buf_gpu, b_hz0->buf_gpu,
                 z0->buf_gpu);
-
+    // cudaDeviceSynchronize();
+    // CHECK_CUDA(cudaGetLastError());
     gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
                 W_in0->buf_gpu, emb_out->buf_gpu, b_in0->buf_gpu,
                 W_hn0->buf_gpu, hidden0->buf_gpu, b_hn0->buf_gpu,
@@ -593,7 +597,6 @@ void namegen(int N, float *random_floats, char *output) {
     //TODO: is it able to overwrite hidden0?
     gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z0->buf_gpu, n0->buf_gpu,
                                               hidden0->buf_gpu);
-
     //////////////////////////////////////////////
     /* Layer 2: input : hidden0 & hid: hidden 1*/
     //////////////////////////////////////////////
@@ -616,7 +619,7 @@ void namegen(int N, float *random_floats, char *output) {
     //TODO: is it able to overwrite hidden0?
     gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z1->buf_gpu, n1->buf_gpu,
                                               hidden1->buf_gpu);
-
+    
     //////////////////////////////////////////////
     /* Linear: input : hidden1                  */
     //////////////////////////////////////////////
@@ -633,89 +636,9 @@ void namegen(int N, float *random_floats, char *output) {
     gpu_random_select<<<gridDim_rand, blockDim_rand>>>(
       N, l, char_prob->buf_gpu, rfloats->buf_gpu, g_output, input->buf_gpu
     );
-
-    // int selected_char = random_select(char_prob, rfloats, n * MAX_LEN + l);
-    // output[n * (MAX_LEN + 1) + l] = selected_char;
-    // input->buf[0] = selected_char;      
-
-  //   /* First layer r */
-  //   matvec(W_ir0, emb_out, rtmp00);
-  //   matvec(W_hr0, hidden0, rtmp01);
-  //   elemwise_add(rtmp00, b_ir0, rtmp02);
-  //   elemwise_add(rtmp02, rtmp01, rtmp03);
-  //   elemwise_add(rtmp03, b_hr0, rtmp04);
-  //   elemwise_sigmoid(rtmp04, r0);
-
-  //   /* First layer z */
-  //   matvec(W_iz0, emb_out, ztmp00);
-  //   matvec(W_hz0, hidden0, ztmp01);
-  //   elemwise_add(ztmp00, b_iz0, ztmp02);
-  //   elemwise_add(ztmp02, ztmp01, ztmp03);
-  //   elemwise_add(ztmp03, b_hz0, ztmp04);
-  //   elemwise_sigmoid(ztmp04, z0);
-
-  //   /* First layer n */
-  //   matvec(W_in0, emb_out, ntmp00);
-  //   elemwise_add(ntmp00, b_in0, ntmp01);
-  //   matvec(W_hn0, hidden0, ntmp02);
-  //   elemwise_add(ntmp02, b_hn0, ntmp03);
-  //   elemwise_mul(r0, ntmp03, ntmp04);
-  //   elemwise_add(ntmp01, ntmp04, ntmp05);
-  //   elemwise_tanh(ntmp05, n0);
-
-  //   /* First layer h (hidden) */
-  //   elemwise_oneminus(z0, htmp00);
-  //   elemwise_mul(htmp00, n0, htmp01);
-  //   elemwise_mul(z0, hidden0, htmp02);
-  //   elemwise_add(htmp01, htmp02, hidden0);
-
-  //   /* Second layer r */
-  //   matvec(W_ir1, hidden0, rtmp10);
-  //   matvec(W_hr1, hidden1, rtmp11);
-  //   elemwise_add(rtmp10, b_ir1, rtmp12);
-  //   elemwise_add(rtmp12, rtmp11, rtmp13);
-  //   elemwise_add(rtmp13, b_hr1, rtmp14);
-  //   elemwise_sigmoid(rtmp14, r1);
-
-  //   /* Second layer z */
-  //   matvec(W_iz1, hidden0, ztmp10);
-  //   matvec(W_hz1, hidden1, ztmp11);
-  //   elemwise_add(ztmp10, b_iz1, ztmp12);
-  //   elemwise_add(ztmp12, ztmp11, ztmp13);
-  //   elemwise_add(ztmp13, b_hz1, ztmp14);
-  //   elemwise_sigmoid(ztmp14, z1);
-
-  //   /* Second layer n */
-  //   matvec(W_in1, hidden0, ntmp10);
-  //   elemwise_add(ntmp10, b_in1, ntmp11);
-  //   matvec(W_hn1, hidden1, ntmp12);
-  //   elemwise_add(ntmp12, b_hn1, ntmp13);
-  //   elemwise_mul(r1, ntmp13, ntmp14);
-  //   elemwise_add(ntmp11, ntmp14, ntmp15);
-  //   elemwise_tanh(ntmp15, n1);
-
-  //   /* Second layer h (hidden) */
-  //   elemwise_oneminus(z1, htmp10);
-  //   elemwise_mul(htmp10, n1, htmp11);
-  //   elemwise_mul(z1, hidden1, htmp12);
-  //   elemwise_add(htmp11, htmp12, hidden1);
-
-  //   /* Fully connected layer */
-  //   matvec(W_fc, hidden1, ftmp0);
-  //   elemwise_add(ftmp0, b_fc, f);
-
-  //   /* Softmax */
-  //   softmax(f, char_prob);
-
-  //   /* Random select */
-  //   int selected_char = random_select(char_prob, rfloats, n * MAX_LEN + l);
-
-  //   output[n * (MAX_LEN + 1) + l] = selected_char;
-  //   input->buf[0] = selected_char;
-
-  //   if (selected_char == EOS)
-  //     break;
   }
+cudaDeviceSynchronize();
+CHECK_CUDA(cudaGetLastError());
 CHECK_CUDA(cudaMemcpy(output, g_output, N * (MAX_LEN+1) * sizeof(char),
                         cudaMemcpyDeviceToHost));
 

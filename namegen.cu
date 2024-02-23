@@ -424,13 +424,13 @@ __global__ void gpu_mmbrmmbt(const int N, const int K1, const int K2,
   // #pragma unroll 128
   for (int _k=0; _k<K2; ++_k) 
   {_sum += _W2[_r * K2 + _k] * _X2[_k * N + _c];}
-  _sum = (_sum + _b2[_r]) * _r1[_c];
-  // #pragma unroll 128
+  _sum = (_sum + _b2[_r])* _r1[_r * N + _c];
+  // // #pragma unroll 128
   for (int _k=0; _k<K1; ++_k) 
   {_sum += _W1[_r * K1 + _k] * _X1[_k * N + _c];}
-
   _sum += _b1[_r];
-  _output[_r * N + _c] = _gpu_tanh(_sum);
+  _output[_r * N + _c] = tanhf(_sum);
+  // _output[_r * N + _c] = _sum;
 }
 
 __global__ void gpu_compute_h(const int N, float* zt, float* nt,
@@ -577,6 +577,7 @@ void namegen(int N, float *random_floats, char *output) {
                 W_hn0->buf_gpu, hidden0->buf_gpu, b_hn0->buf_gpu,
                 r0->buf_gpu, n0->buf_gpu);
     cudaDeviceSynchronize();
+    // exit(0);
     CHECK_CUDA(cudaGetLastError());
     if (l==0){
       size_t _to_print_size = HIDDEN_DIM * N;

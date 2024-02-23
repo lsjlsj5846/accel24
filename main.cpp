@@ -82,12 +82,12 @@ int main(int argc, char **argv) {
   printf("Done!\n");
 
   /* Print first few result */
-  // int print_cnt = N < print_max ? N : print_max;
-  // printf("First %d results are:", print_cnt);
-  // for (int i = 0; i < print_cnt; i++) {
-  //   printf(" %s%c", output + i * (MAX_LEN + 1),
-  //           i == (print_cnt - 1) ? '\n' : ',');
-  // }
+  int print_cnt = N < print_max ? N : print_max;
+  printf("First %d results are:", print_cnt);
+  for (int i = 0; i < print_cnt; i++) {
+    printf(" %s%c", output + i * (MAX_LEN + 1),
+            i == (print_cnt - 1) ? '\n' : ',');
+  }
 
   /* Write the results to file */
   printf("Writing to %s ...", output_fname);

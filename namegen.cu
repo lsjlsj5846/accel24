@@ -39,7 +39,7 @@ struct Tensor
   }
 
   /* Alloc memory */
-  Tensor(std::vector<int> shape_, bool _init)
+  Tensor(std::vector<int> shape_, bool _init, bool is_out)
   {
     ndim = shape_.size();
     for (size_t i = 0; i < ndim; i++)
@@ -48,14 +48,21 @@ struct Tensor
     }
 
     size_t n = num_elem();
-    buf = (float *)malloc(n * sizeof(float));
-    set_zero();
-    CHECK_CUDA(cudaMalloc(&buf_gpu, sizeof(float) * n));
-    if (_init == true)
-    {
-      CHECK_CUDA(cudaMemcpy(buf_gpu, buf, sizeof(float) * n,
-                            cudaMemcpyHostToDevice));
+    if (is_out){
+      // buf_char = (char *)malloc(n * sizeof(char));
+      CHECK_CUDA(cudaMallocHost(&buf_char, n*sizeof(char)));
+      set_zero_char();  
     }
+    else {    
+      buf = (float *)malloc(n * sizeof(float));
+      set_zero();
+      CHECK_CUDA(cudaMalloc(&buf_gpu, sizeof(float) * n));
+      if (_init == true)
+      {
+        CHECK_CUDA(cudaMemcpy(buf_gpu, buf, sizeof(float) * n,
+                              cudaMemcpyHostToDevice));
+      }
+      }
     // buf = (float *)malloc(n * sizeof(float));
   }
 
@@ -90,6 +97,13 @@ struct Tensor
       buf[i] = 0.0;
   }
 
+  void set_zero_char()
+  {
+    size_t n = num_elem();
+    for (size_t i = 0; i < n; i++)
+      buf_char[i] = 0;
+  }
+
   size_t num_elem()
   {
     size_t sz = 1;
@@ -101,6 +115,8 @@ struct Tensor
   // Pointer to data
   float *buf_gpu = nullptr;
   float *buf = nullptr;
+  char *buf_char = nullptr;
+  // char *buf_char = nullptr;
 
   // Shape of tensor, from outermost dimension to innermost dimension.
   // e.g., {{1.0, -0.5, 2.3}, {4.3, 5.6, -7.8}} => shape = {2, 3}
@@ -130,6 +146,8 @@ Tensor *ntmp10, *ntmp11, *ntmp12, *ntmp13, *ntmp14, *ntmp15;
 Tensor *htmp00, *htmp01, *htmp02;
 Tensor *htmp10, *htmp11, *htmp12;
 Tensor *ftmp0;
+
+Tensor *my_out;
 
 /* Operations */
 
@@ -376,8 +394,9 @@ void namegen_initialize(int N, char *parameter_fname)
   input = new Tensor({1, N});
   emb_out = new Tensor({EMBEDDING_DIM, N});
 
-  hidden0 = new Tensor({HIDDEN_DIM, N}, true);
-  hidden1 = new Tensor({HIDDEN_DIM, N}, true);
+  hidden0 = new Tensor({HIDDEN_DIM, N}, true, false);
+  hidden1 = new Tensor({HIDDEN_DIM, N}, true, false);
+  my_out = new Tensor({N*(MAX_LEN+1)}, false, true);
 
   r0 = new Tensor({HIDDEN_DIM, N});
   z0 = new Tensor({HIDDEN_DIM, N});
@@ -590,10 +609,11 @@ void namegen(int N, float *random_floats, char *output)
   // memcpy(rfloats->buf, random_floats, N * MAX_LEN * sizeof(float));
   CHECK_CUDA(cudaMemcpy(rfloats->buf_gpu, random_floats, N * MAX_LEN * sizeof(float),
                         cudaMemcpyHostToDevice));
-  cudaDeviceSynchronize();
-  CHECK_CUDA(cudaGetLastError());
+  // cudaDeviceSynchronize();
+  // CHECK_CUDA(cudaGetLastError());
   char *g_output;
   memset(output, 0, N * (MAX_LEN + 1) * sizeof(char));
+  // output = (my_out->buf_char);
   // CHECK_CUDA(cudaMallocHost(&output, N * (MAX_LEN + 1) * sizeof(char)));
   CHECK_CUDA(cudaMalloc(&g_output, N * (MAX_LEN + 1) * sizeof(char)));
   cudaDeviceSynchronize();

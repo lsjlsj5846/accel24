@@ -365,13 +365,13 @@ __global__ void fill_gpu_value(const int N, float *buf_gpu, const float _value){
 
 __global__ void gpu_embedding(const int N, const float *i_buf_gpu, 
                               const float *w_buf_gpu, float *o_buf_gpu){
-  int r = blockIdx.y * blockDim.y + threadIdx.y;
-  int c = blockIdx.x * blockDim.x + threadIdx.x;
+  int _r = blockIdx.y * blockDim.y + threadIdx.y;
+  int _c = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if (r>= EMBEDDING_DIM || c >= N) return;
+  // if (r>= EMBEDDING_DIM || c >= N) return;
   // TODO: vernerable due to the typecasting
   // o_buf_gpu[r * N + c] = w_buf_gpu[(int)(i_buf_gpu[r]) * N + c];
-  o_buf_gpu[r*N + c] = w_buf_gpu[r* N + (int)(i_buf_gpu[c])];
+  o_buf_gpu[_r*N + _c] = w_buf_gpu[(int)(i_buf_gpu[_c]) * EMBEDDING_DIM + _r];
 }
 
 __global__ void gpu_mmbmmbs(const int N, const int K1, const int K2,
@@ -433,20 +433,20 @@ ht[r*N + c] = (1-_zt) * nt[r*N + c] + _zt * ht[r*N + c];
 }
 
 __global__ void gpu_linear(const int N, const int K,
-                           float* W, float* X, float* b,
-                           float* output
+                           float* _W, float* _X, float* _b,
+                           float* _output
                            ){
-int r = blockIdx.y * blockDim.y + threadIdx.y;
-int c = blockIdx.x * blockDim.x + threadIdx.x;
+int _r = blockIdx.y * blockDim.y + threadIdx.y;
+int _c = blockIdx.x * blockDim.x + threadIdx.x;
 
-float sum = 0.0;
+float _sum = 0.0;
 
 //TODO: Check!! is ++K right?
 // #pragma unroll 128
-for (int k=0; k<K; ++k) 
-{sum += W[r * HIDDEN_DIM + k] * X[k * K + c];}
-sum += b[r];
-output[r * N + c] += sum;
+for (int _k=0; _k<K; ++_k) 
+{_sum += _W[_r * K + _k] * _X[_k * N + _c];}
+_sum += _b[_r];
+_output[_r * N + _c] += _sum;
 }
 
 __global__ void softmax_kernel(float *input, float *output, int N) {
@@ -567,46 +567,52 @@ void namegen(int N, float *random_floats, char *output) {
 //     /* Layer 2: input : hidden0 & hid: hidden 1*/
 //     //////////////////////////////////////////////
 
-//     gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
-//                 W_ir1->buf_gpu, hidden0->buf_gpu, b_ir1->buf_gpu,
-//                 W_hr1->buf_gpu, hidden1->buf_gpu, b_hr1->buf_gpu,
-//                 r1->buf_gpu);
+    gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
+                W_ir1->buf_gpu, hidden0->buf_gpu, b_ir1->buf_gpu,
+                W_hr1->buf_gpu, hidden1->buf_gpu, b_hr1->buf_gpu,
+                r1->buf_gpu);
 
-//     gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
-//                 W_iz1->buf_gpu, hidden0->buf_gpu, b_iz1->buf_gpu,
-//                 W_hz1->buf_gpu, hidden1->buf_gpu, b_hz1->buf_gpu,
-//                 z1->buf_gpu);
+    gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
+                W_iz1->buf_gpu, hidden0->buf_gpu, b_iz1->buf_gpu,
+                W_hz1->buf_gpu, hidden1->buf_gpu, b_hz1->buf_gpu,
+                z1->buf_gpu);
 
-//     gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
-//                 W_in1->buf_gpu, hidden0->buf_gpu, b_in1->buf_gpu,
-//                 W_hn1->buf_gpu, hidden1->buf_gpu, b_hn1->buf_gpu,
-//                 r1->buf_gpu, n1->buf_gpu);
+    gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
+                W_in1->buf_gpu, hidden0->buf_gpu, b_in1->buf_gpu,
+                W_hn1->buf_gpu, hidden1->buf_gpu, b_hn1->buf_gpu,
+                r1->buf_gpu, n1->buf_gpu);
 
-//     //TODO: is it able to overwrite hidden0?
-//     gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z1->buf_gpu, n1->buf_gpu,
-//                                               hidden1->buf_gpu);
+    //TODO: is it able to overwrite hidden0?
+    gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z1->buf_gpu, n1->buf_gpu,
+                                              hidden1->buf_gpu);
+  cudaDeviceSynchronize();
+  CHECK_CUDA(cudaGetLastError());
     
 //     //////////////////////////////////////////////
 //     /* Linear: input : hidden1                  */
 //     //////////////////////////////////////////////
-//     gpu_linear<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM,
-//     W_fc->buf_gpu, hidden1->buf_gpu, b_fc->buf_gpu,f->buf_gpu);
-//     softmax_kernel<<<N, NUM_CHAR>>>(f->buf_gpu, char_prob->buf_gpu, N);
+gpu_linear<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM,
+W_fc->buf_gpu, hidden1->buf_gpu, b_fc->buf_gpu,f->buf_gpu);
+softmax_kernel<<<N, NUM_CHAR>>>(f->buf_gpu, char_prob->buf_gpu, N);
 
 //     //////////////////////////////////////////////
 //     /* Move results to CPU and finalize         */
 //     //////////////////////////////////////////////
 
-//     dim3 blockDim_rand(1024);
-//     dim3 gridDim_rand((N+1023)/1024);
-//     gpu_random_select<<<gridDim_rand, blockDim_rand>>>(
-//       N, l, char_prob->buf_gpu, rfloats->buf_gpu, g_output, input->buf_gpu
-//     );
+    dim3 blockDim_rand(1024);
+    dim3 gridDim_rand((N+1023)/1024);
+    gpu_random_select<<<gridDim_rand, blockDim_rand>>>(
+      N, l, char_prob->buf_gpu, rfloats->buf_gpu, g_output, input->buf_gpu
+    );
+  cudaDeviceSynchronize();
+  CHECK_CUDA(cudaGetLastError());
   }
-// cudaDeviceSynchronize();
-// CHECK_CUDA(cudaGetLastError());
-// CHECK_CUDA(cudaMemcpy(output, g_output, N * (MAX_LEN+1) * sizeof(char),
-//                         cudaMemcpyDeviceToHost));
+cudaDeviceSynchronize();
+CHECK_CUDA(cudaGetLastError());
+CHECK_CUDA(cudaMemcpy(output, g_output, N * (MAX_LEN+1) * sizeof(char),
+                        cudaMemcpyDeviceToHost));
+cudaDeviceSynchronize();
+CHECK_CUDA(cudaGetLastError());
 
 }
 

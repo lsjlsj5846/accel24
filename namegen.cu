@@ -487,6 +487,8 @@ char* output, float* input){
   input[tid] = (float)(NUM_CHAR - 1);
 }
 
+float* _mat_to_print;
+
 /*
  * Generate names.
  * Any input-dependent computation/communication must be done here.
@@ -528,6 +530,7 @@ void namegen(int N, float *random_floats, char *output) {
                   emb_out->buf_gpu);    
     cudaDeviceSynchronize();
     CHECK_CUDA(cudaGetLastError());
+    
     // //////////////////////////////////////////////
     // /* Layer 1: input : emb_out & hid: hidden 0*/
     // //////////////////////////////////////////////
@@ -540,6 +543,20 @@ void namegen(int N, float *random_floats, char *output) {
                 r0->buf_gpu);
     cudaDeviceSynchronize();
     CHECK_CUDA(cudaGetLastError());
+
+    if (l==0){
+      size_t _to_print_size = N * HIDDEN_DIM;
+      CHECK_CUDA(cudaMallocHost(&_mat_to_print, sizeof(float) * _to_print_size));
+      CHECK_CUDA(cudaMemcpy(_mat_to_print, r0->buf_gpu, 
+      sizeof(float) * _to_print_size, cudaMemcpyDeviceToHost));
+      printf("\n");
+      for (int _j =10; _j<15; _j++){
+        for (int _i=10; _i < 15; _i++){
+          printf("%f ,", _mat_to_print[_i *N + _j]);
+        }
+        printf("\n");
+      }
+    }
 
     // dim3 blockDim_4(32,32);
     // dim3 gridDim_4( (N + 31)/32, (HIDDEN_DIM+31)/32);

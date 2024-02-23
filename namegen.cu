@@ -382,10 +382,10 @@ __global__ void gpu_mmbmmbs(const int N, const int K1, const int K2,
           
   int _r = blockIdx.y * blockDim.y + threadIdx.y;
   int _c = blockIdx.x * blockDim.x + threadIdx.x;
-  if (_r == 0 && _c == 0 ){
-    printf("%f %f %f %f %f %f %f\n", _W1[0], *_X1, *_b1, *_W2, *_X2, *_b2, *_output);
+  // if (_r == 0 && _c == 0 ){
+  //   printf("%f %f %f %f %f %f %f\n", _W1[0], *_X1, *_b1, *_W2, *_X2, *_b2, *_output);
 
-  }
+  // }
   if (_r >= HIDDEN_DIM || _c >= N) return;
   float _sum = 0.0;
   // if () return;
@@ -396,18 +396,17 @@ __global__ void gpu_mmbmmbs(const int N, const int K1, const int K2,
   {
     _sum += _W1[_r * K1 + kk] * _X1[kk * N + _c];
   
-    if (_r == 0 && _c == 0 ){
-    printf("kk=%d W1=%f X1=%f\n", kk, _W1[_r * K1 + kk], _X1[kk*N+_c]);
-
-  }
+    // if (_r == 0 && _c == 0 ){
+    // printf("kk=%d W1=%f X1=%f\n", kk, _W1[_r * K1 + kk], _X1[kk*N+_c]);
+  // }
     }
 
   // // // #pragma unroll 128
-  // for (int k2=0; k2<K2; ++k2) 
-  // {_sum += _W2[_r * K2 + k2] * _X2[k2 * N + _c];}
-  // _sum += _b1[_r] + _b2[_r];
-  // _output[_r * N + _c] = 1.0 / (1.0 + expf(-_sum));
-  _output[_r * N + _c] = _sum;
+  for (int k2=0; k2<K2; ++k2) 
+  {_sum += _W2[_r * K2 + k2] * _X2[k2 * N + _c];}
+  _sum += _b1[_r] + _b2[_r];
+  _output[_r * N + _c] = 1.0 / (1.0 + expf(-_sum));
+  // _output[_r * N + _c] = _sum;
 }
 
 __global__ void gpu_mmbrmmbt(const int N, const int K1, const int K2,
@@ -556,8 +555,7 @@ void namegen(int N, float *random_floats, char *output) {
                 W_hr0->buf_gpu, hidden0->buf_gpu, b_hr0->buf_gpu,
                 r0->buf_gpu);
     CHECK_CUDA(cudaDeviceSynchronize());
-    exit(0);
-    
+    // exit(0);
     CHECK_CUDA(cudaGetLastError());
 
     if (l==0){
@@ -566,13 +564,14 @@ void namegen(int N, float *random_floats, char *output) {
       CHECK_CUDA(cudaMemcpy(_mat_to_print, r0->buf_gpu, 
       sizeof(float) * _to_print_size, cudaMemcpyDeviceToHost));
       printf("\n");
-      for (int _j =0; _j<HIDDEN_DIM; _j++){
-        for (int _i=0; _i < N; _i++){
-          printf("m[%d][%d] = %f\n", _i, _j, _mat_to_print[_i * N + _j]);
+      for (int _j =10; _j<15; _j++){
+        for (int _i=10; _i < 15; _i++){
+          printf("%f, ", _mat_to_print[_i * N + _j]);
+          // printf("m[%d][%d] = %f\n", _i, _j, _mat_to_print[_i * N + _j]);
         }
         printf("\n");
       }
-      exit(0);
+      // exit(0);
     }
 
     // dim3 blockDim_4(32,32);

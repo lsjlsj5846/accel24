@@ -416,6 +416,7 @@ __global__ void gpu_mmbrmmbt(const int N, const int K1, const int K2,
                            ){
   int _r = blockIdx.y * blockDim.y + threadIdx.y;
   int _c = blockIdx.x * blockDim.x + threadIdx.x;
+  if (_r >= HIDDEN_DIM || _c >= N) return;
 
   float _sum = 0.0;
 
@@ -423,13 +424,13 @@ __global__ void gpu_mmbrmmbt(const int N, const int K1, const int K2,
   // #pragma unroll 128
   for (int _k=0; _k<K2; ++_k) 
   {_sum += _W2[_r * K2 + _k] * _X2[_k * N + _c];}
-  _sum *= _r1[_c];
+  _sum = (_sum + _b2[_r]) * _r1[_c];
   // #pragma unroll 128
   for (int _k=0; _k<K1; ++_k) 
   {_sum += _W1[_r * K1 + _k] * _X1[_k * N + _c];}
 
-  _sum += _b1[_r] + _b2[_r];
-  _output[_r * N + _c] += _gpu_tanh(_sum);
+  _sum += _b1[_r];
+  _output[_r * N + _c] = _gpu_tanh(_sum);
 }
 
 __global__ void gpu_compute_h(const int N, float* zt, float* nt,
@@ -450,6 +451,7 @@ __global__ void gpu_linear(const int N, const int K,
                            ){
 int _r = blockIdx.y * blockDim.y + threadIdx.y;
 int _c = blockIdx.x * blockDim.x + threadIdx.x;
+if (_r >= HIDDEN_DIM || _c >= N) return;
 
 float _sum = 0.0;
 
@@ -458,7 +460,7 @@ float _sum = 0.0;
 for (int _k=0; _k<K; ++_k) 
 {_sum += _W[_r * K + _k] * _X[_k * N + _c];}
 _sum += _b[_r];
-_output[_r * N + _c] += _sum;
+_output[_r * N + _c] = _sum;
 }
 
 __global__ void softmax_kernel(float *input, float *output, int N) {
@@ -558,10 +560,28 @@ void namegen(int N, float *random_floats, char *output) {
     // exit(0);
     CHECK_CUDA(cudaGetLastError());
 
+    // dim3 blockDim_4(32,32);
+    // dim3 gridDim_4( (N + 31)/32, (HIDDEN_DIM+31)/32);
+    
+    gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
+                W_iz0->buf_gpu, emb_out->buf_gpu, b_iz0->buf_gpu,
+                W_hz0->buf_gpu, hidden0->buf_gpu, b_hz0->buf_gpu,
+                z0->buf_gpu);
+      
+    
+    cudaDeviceSynchronize();
+    CHECK_CUDA(cudaGetLastError());
+
+    gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
+                W_in0->buf_gpu, emb_out->buf_gpu, b_in0->buf_gpu,
+                W_hn0->buf_gpu, hidden0->buf_gpu, b_hn0->buf_gpu,
+                r0->buf_gpu, n0->buf_gpu);
+    cudaDeviceSynchronize();
+    CHECK_CUDA(cudaGetLastError());
     if (l==0){
       size_t _to_print_size = HIDDEN_DIM * N;
       CHECK_CUDA(cudaMallocHost(&_mat_to_print, sizeof(float) * _to_print_size));
-      CHECK_CUDA(cudaMemcpy(_mat_to_print, r0->buf_gpu, 
+      CHECK_CUDA(cudaMemcpy(_mat_to_print, n0->buf_gpu, 
       sizeof(float) * _to_print_size, cudaMemcpyDeviceToHost));
       printf("\n");
       for (int _j =10; _j<15; _j++){
@@ -573,23 +593,6 @@ void namegen(int N, float *random_floats, char *output) {
       }
       // exit(0);
     }
-
-    // dim3 blockDim_4(32,32);
-    // dim3 gridDim_4( (N + 31)/32, (HIDDEN_DIM+31)/32);
-    
-    gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
-                W_iz0->buf_gpu, emb_out->buf_gpu, b_iz0->buf_gpu,
-                W_hz0->buf_gpu, hidden0->buf_gpu, b_hz0->buf_gpu,
-                z0->buf_gpu);
-    cudaDeviceSynchronize();
-    CHECK_CUDA(cudaGetLastError());
-
-    gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
-                W_in0->buf_gpu, emb_out->buf_gpu, b_in0->buf_gpu,
-                W_hn0->buf_gpu, hidden0->buf_gpu, b_hn0->buf_gpu,
-                r0->buf_gpu, n0->buf_gpu);
-    cudaDeviceSynchronize();
-    CHECK_CUDA(cudaGetLastError());
 
 //     //TODO: is it able to overwrite hidden0?
   gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z0->buf_gpu, n0->buf_gpu,

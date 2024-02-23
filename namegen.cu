@@ -347,7 +347,7 @@ void namegen_initialize(int N, char *parameter_fname) {
   z1 = new Tensor({HIDDEN_DIM, N});
   n1 = new Tensor({HIDDEN_DIM, N});
 
-  f = new Tensor({HIDDEN_DIM, N});
+  f = new Tensor({NUM_CHAR, N});
 
   rfloats = new Tensor({N, MAX_LEN});
   // ftmp0 = new Tensor({NUM_CHAR, N});
@@ -451,7 +451,7 @@ __global__ void gpu_linear(const int N, const int K,
                            ){
 int _r = blockIdx.y * blockDim.y + threadIdx.y;
 int _c = blockIdx.x * blockDim.x + threadIdx.x;
-if (_r >= HIDDEN_DIM || _c >= N) return;
+if (_r >= NUM_CHAR || _c >= N) return;
 
 float _sum = 0.0;
 
@@ -465,23 +465,29 @@ _output[_r * N + _c] = _sum;
 
 __global__ void softmax_kernel(float *input, float *output, int N) {
   // Calculate element-wise exponential and store in shared memory
-  __shared__ float L[NUM_CHAR];
+  __shared__ float L[NUM_CHAR+1];
 
   unsigned int tid = threadIdx.x; // local
   unsigned int bn = blockIdx.x; // block number
-  L[tid] = 0.0;
-  L[tid] = expf(input[tid * N + bn]);
+  // L[tid] = 0.0;
+  float _exp = expf(input[tid * N + bn]);
+  L[tid] = _exp;
 
   __syncthreads();
   float _sum = 0.0;
   if (tid==0){
     for (int i=0; i<NUM_CHAR; i++){
       _sum += L[i];
+      // if (bn==2){
+      //   printf("%d -> %f (%f)\n", i, L[i], _sum);
+      // }
     }
+    L[NUM_CHAR] = _sum;
    }
 
   __syncthreads();
-  output[tid * N + bn] = input[tid * N + bn] / _sum;  
+  _sum = L[NUM_CHAR];
+  output[tid * N + bn] = _exp / (_sum + 0.0000001);  
 }
 
 __global__ void gpu_random_select(int N, int ll, float* cp, float* rf, 
@@ -579,21 +585,6 @@ void namegen(int N, float *random_floats, char *output) {
     cudaDeviceSynchronize();
     // exit(0);
     CHECK_CUDA(cudaGetLastError());
-    if (l==0){
-      size_t _to_print_size = HIDDEN_DIM * N;
-      CHECK_CUDA(cudaMallocHost(&_mat_to_print, sizeof(float) * _to_print_size));
-      CHECK_CUDA(cudaMemcpy(_mat_to_print, n0->buf_gpu, 
-      sizeof(float) * _to_print_size, cudaMemcpyDeviceToHost));
-      printf("\n");
-      for (int _j =10; _j<15; _j++){
-        for (int _i=10; _i < 15; _i++){
-          printf("%f, ", _mat_to_print[_i * N + _j]);
-          // printf("m[%d][%d] = %f\n", _i, _j, _mat_to_print[_i * N + _j]);
-        }
-        printf("\n");
-      }
-      // exit(0);
-    }
 
 //     //TODO: is it able to overwrite hidden0?
   gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z0->buf_gpu, n0->buf_gpu,
@@ -622,15 +613,34 @@ void namegen(int N, float *random_floats, char *output) {
     //TODO: is it able to overwrite hidden0?
     gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z1->buf_gpu, n1->buf_gpu,
                                               hidden1->buf_gpu);
-  cudaDeviceSynchronize();
-  CHECK_CUDA(cudaGetLastError());
+  
     
 //     //////////////////////////////////////////////
 //     /* Linear: input : hidden1                  */
 //     //////////////////////////////////////////////
-gpu_linear<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM,
+dim3 blockDim_4(32,32);
+dim3 gridDim_4( (N + 31)/32, (NUM_CHAR+31)/32);
+gpu_linear<<<gridDim_4, blockDim_4>>>(N, HIDDEN_DIM,
 W_fc->buf_gpu, hidden1->buf_gpu, b_fc->buf_gpu,f->buf_gpu);
 softmax_kernel<<<N, NUM_CHAR>>>(f->buf_gpu, char_prob->buf_gpu, N);
+cudaDeviceSynchronize();
+CHECK_CUDA(cudaGetLastError());
+// exit(0);
+if (l==0){
+      size_t _to_print_size = NUM_CHAR * N;
+      CHECK_CUDA(cudaMallocHost(&_mat_to_print, sizeof(float) * _to_print_size));
+      CHECK_CUDA(cudaMemcpy(_mat_to_print, char_prob->buf_gpu, 
+      sizeof(float) * _to_print_size, cudaMemcpyDeviceToHost));
+      printf("\n");
+      for (int _j =10; _j<15; _j++){
+        for (int _i=100; _i < 110; _i++){
+          // printf("%f, ", _mat_to_print[_i * N + _j]);
+          printf("m[%d][%d] = %f\n", _j, _i, _mat_to_print[_i * N + _j]);
+        }
+        printf("\n");
+      }
+      // exit(0);
+    }
 
 //     //////////////////////////////////////////////
 //     /* Move results to CPU and finalize         */

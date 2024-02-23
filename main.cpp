@@ -5,6 +5,8 @@
 #include "namegen.h"
 #include "util.h"
 
+#include "cuda_runtime.h"
+
 /* Global arguments */
 int rng_seed = 4155;
 int N = 1;
@@ -69,8 +71,10 @@ int main(int argc, char **argv) {
 
 
   /* Generate names and measure time */
+  cudaDeviceSynchronize();
   double namegen_st = get_time();
   namegen(N, random_floats, output);
+  cudaDeviceSynchronize();
   double namegen_en = get_time();
 
 

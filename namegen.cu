@@ -199,9 +199,9 @@ void elemwise_sigmoid(Tensor *input, Tensor *output) {
   }
 }
 
-__device__ float _gpu_sigmoid(float x){
-  return 1.0 / (1.0 + expf(-x));
-}
+// __device__ float _gpu_sigmoid(float x){
+//   return 1.0 / (1.0 + expf(-x));
+// }
 
 __device__ float _gpu_tanh(float x){
   return tanhf(x);
@@ -348,61 +348,12 @@ void namegen_initialize(int N, char *parameter_fname) {
   n1 = new Tensor({HIDDEN_DIM, N});
 
   f = new Tensor({HIDDEN_DIM, N});
-  // h1 = new Tensor({N, HIDDEN_DIM});
-  
-  // r0 = new Tensor({N, HIDDEN_DIM});
-  // r1 = new Tensor({N, HIDDEN_DIM});
-  // z0 = new Tensor({N, HIDDEN_DIM});
-  // z1 = new Tensor({N, HIDDEN_DIM});
-  // n0 = new Tensor({N, HIDDEN_DIM});
-  // n1 = new Tensor({N, HIDDEN_DIM});
-  // f = new Tensor({N, NUM_CHAR});
-
-  // rtmp00 = new Tensor({N, HIDDEN_DIM});
-  // rtmp01 = new Tensor({N, HIDDEN_DIM});
-  // rtmp02 = new Tensor({N, HIDDEN_DIM});
-  // rtmp03 = new Tensor({N, HIDDEN_DIM});
-  // rtmp04 = new Tensor({N, HIDDEN_DIM});
-  // rtmp10 = new Tensor({N, HIDDEN_DIM});
-  // rtmp11 = new Tensor({N, HIDDEN_DIM});
-  // rtmp12 = new Tensor({N, HIDDEN_DIM});
-  // rtmp13 = new Tensor({N, HIDDEN_DIM});
-  // rtmp14 = new Tensor({N, HIDDEN_DIM});
-
-  // ztmp00 = new Tensor({N, HIDDEN_DIM});
-  // ztmp01 = new Tensor({N, HIDDEN_DIM});
-  // ztmp02 = new Tensor({N, HIDDEN_DIM});
-  // ztmp03 = new Tensor({N, HIDDEN_DIM});
-  // ztmp04 = new Tensor({N, HIDDEN_DIM});
-  // ztmp10 = new Tensor({N, HIDDEN_DIM});
-  // ztmp11 = new Tensor({N, HIDDEN_DIM});
-  // ztmp12 = new Tensor({N, HIDDEN_DIM});
-  // ztmp13 = new Tensor({N, HIDDEN_DIM});
-  // ztmp14 = new Tensor({N, HIDDEN_DIM});
-
-  // ntmp00 = new Tensor({N, HIDDEN_DIM});
-  // ntmp01 = new Tensor({N, HIDDEN_DIM});
-  // ntmp02 = new Tensor({N, HIDDEN_DIM});
-  // ntmp03 = new Tensor({N, HIDDEN_DIM});
-  // ntmp04 = new Tensor({N, HIDDEN_DIM});
-  // ntmp05 = new Tensor({N, HIDDEN_DIM});
-  // ntmp10 = new Tensor({N, HIDDEN_DIM});
-  // ntmp11 = new Tensor({N, HIDDEN_DIM});
-  // ntmp12 = new Tensor({N, HIDDEN_DIM});
-  // ntmp13 = new Tensor({N, HIDDEN_DIM});
-  // ntmp14 = new Tensor({N, HIDDEN_DIM});
-  // ntmp15 = new Tensor({N, HIDDEN_DIM});
-
-  // htmp00 = new Tensor({N, HIDDEN_DIM});
-  // htmp01 = new Tensor({N, HIDDEN_DIM});
-  // htmp02 = new Tensor({N, HIDDEN_DIM});
-  // htmp10 = new Tensor({N, HIDDEN_DIM});
-  // htmp11 = new Tensor({N, HIDDEN_DIM});
-  // htmp12 = new Tensor({N, HIDDEN_DIM});
 
   rfloats = new Tensor({N, MAX_LEN});
-  ftmp0 = new Tensor({NUM_CHAR, N});
+  // ftmp0 = new Tensor({NUM_CHAR, N});
   char_prob = new Tensor({NUM_CHAR, N});
+  cudaDeviceSynchronize();
+  printf("************ Initialization Success!!\n");
 }
 
 __global__ void fill_gpu_value(const int N, float *buf_gpu, const float _value){
@@ -424,25 +375,25 @@ __global__ void gpu_embedding(const int N, const float *i_buf_gpu,
 }
 
 __global__ void gpu_mmbmmbs(const int N, const int K1, const int K2,
-                           float* W1, float* X1, float* b1,
-                           float* W2, float* X2, float* b2,
-                           float* output
+                           float* _W1, float* _X1, float* _b1,
+                           float* _W2, float* _X2, float* _b2,
+                           float* _output
                            ){
-int r = blockIdx.y * blockDim.y + threadIdx.y;
-int c = blockIdx.x * blockDim.x + threadIdx.x;
+int _r = blockIdx.y * blockDim.y + threadIdx.y;
+int _c = blockIdx.x * blockDim.x + threadIdx.x;
 
-float sum = 0.0;
+float _sum = 0.0;
 
 //TODO: Check!! is ++K right?
 // #pragma unroll 128
-for (int k=0; k<K1; ++k) 
-{sum += W1[r * HIDDEN_DIM + k] * X1[k * K1 + c];}
+for (int k1=0; k1<K1; ++k1) 
+{_sum += _W1[_r * HIDDEN_DIM + k1] * _X1[k1 * K1 + _c];}
 
 // #pragma unroll 128
-for (int k=0; k<K2; ++k) 
-{sum += W2[r * HIDDEN_DIM + k] * X2[k * K2 + c];}
-sum += b1[r] + b2[r];
-output[r * N + c] += _gpu_sigmoid(sum);
+for (int k2=0; k2<K2; ++k2) 
+{_sum += _W2[_r * HIDDEN_DIM + k2] * _X2[k2 * K2 + _c];}
+_sum += _b1[_r] + _b2[_r];
+_output[_r * N + _c] += 1.0 / (1.0 + expf(-_sum));
 }
 
 __global__ void gpu_mmbrmmbt(const int N, const int K1, const int K2,
@@ -547,9 +498,13 @@ void namegen(int N, float *random_floats, char *output) {
   // memcpy(rfloats->buf, random_floats, N * MAX_LEN * sizeof(float));
   CHECK_CUDA(cudaMemcpy(rfloats->buf_gpu, random_floats, N * MAX_LEN * sizeof(float),
                         cudaMemcpyHostToDevice));
+  cudaDeviceSynchronize();
+  CHECK_CUDA(cudaGetLastError());
   char* g_output;
   memset(output, 0, N * (MAX_LEN + 1) * sizeof(char));
   CHECK_CUDA(cudaMalloc(&g_output, N * (MAX_LEN + 1) * sizeof(char)));
+  cudaDeviceSynchronize();
+  CHECK_CUDA(cudaGetLastError());
 
   /* Generate N names */
   /* Initialize input and hidden vector. */
@@ -560,7 +515,8 @@ void namegen(int N, float *random_floats, char *output) {
   dim3 gridDim_1((N+1023) / 1024);
   dim3 blockDim_1(1024);
   fill_gpu_value<<<gridDim_1, blockDim_1>>>(N, input->buf_gpu, (float)SOS);
-  
+  cudaDeviceSynchronize();
+  CHECK_CUDA(cudaGetLastError());
 
   for (int l = 0; l < MAX_LEN; l++) {
     /* Embedding */
@@ -569,7 +525,8 @@ void namegen(int N, float *random_floats, char *output) {
     dim3 gridDim_2( (N + 31)/32, (EMBEDDING_DIM+31)/32);
     gpu_embedding<<<gridDim_2, blockDim_2>>>(N, input->buf_gpu, character_embedding->buf_gpu,
                   emb_out->buf_gpu);    
-    
+    cudaDeviceSynchronize();
+    CHECK_CUDA(cudaGetLastError());
     // //////////////////////////////////////////////
     // /* Layer 1: input : emb_out & hid: hidden 0*/
     // //////////////////////////////////////////////
@@ -580,67 +537,73 @@ void namegen(int N, float *random_floats, char *output) {
                 W_ir0->buf_gpu, emb_out->buf_gpu, b_ir0->buf_gpu,
                 W_hr0->buf_gpu, hidden0->buf_gpu, b_hr0->buf_gpu,
                 r0->buf_gpu);
-    // cudaDeviceSynchronize();
-    // CHECK_CUDA(cudaGetLastError());
+    cudaDeviceSynchronize();
+    CHECK_CUDA(cudaGetLastError());
+
+    // dim3 blockDim_4(32,32);
+    // dim3 gridDim_4( (N + 31)/32, (HIDDEN_DIM+31)/32);
     
     gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
                 W_iz0->buf_gpu, emb_out->buf_gpu, b_iz0->buf_gpu,
                 W_hz0->buf_gpu, hidden0->buf_gpu, b_hz0->buf_gpu,
                 z0->buf_gpu);
-    // cudaDeviceSynchronize();
-    // CHECK_CUDA(cudaGetLastError());
+    cudaDeviceSynchronize();
+    CHECK_CUDA(cudaGetLastError());
+    
     gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
                 W_in0->buf_gpu, emb_out->buf_gpu, b_in0->buf_gpu,
                 W_hn0->buf_gpu, hidden0->buf_gpu, b_hn0->buf_gpu,
                 r0->buf_gpu, n0->buf_gpu);
+    cudaDeviceSynchronize();
+    CHECK_CUDA(cudaGetLastError());
 
-    //TODO: is it able to overwrite hidden0?
-    gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z0->buf_gpu, n0->buf_gpu,
-                                              hidden0->buf_gpu);
-    //////////////////////////////////////////////
-    /* Layer 2: input : hidden0 & hid: hidden 1*/
-    //////////////////////////////////////////////
+//     //TODO: is it able to overwrite hidden0?
+//     gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z0->buf_gpu, n0->buf_gpu,
+//                                               hidden0->buf_gpu);
+//     //////////////////////////////////////////////
+//     /* Layer 2: input : hidden0 & hid: hidden 1*/
+//     //////////////////////////////////////////////
 
-    gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
-                W_ir1->buf_gpu, hidden0->buf_gpu, b_ir1->buf_gpu,
-                W_hr1->buf_gpu, hidden1->buf_gpu, b_hr1->buf_gpu,
-                r1->buf_gpu);
+//     gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
+//                 W_ir1->buf_gpu, hidden0->buf_gpu, b_ir1->buf_gpu,
+//                 W_hr1->buf_gpu, hidden1->buf_gpu, b_hr1->buf_gpu,
+//                 r1->buf_gpu);
 
-    gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
-                W_iz1->buf_gpu, hidden0->buf_gpu, b_iz1->buf_gpu,
-                W_hz1->buf_gpu, hidden1->buf_gpu, b_hz1->buf_gpu,
-                z1->buf_gpu);
+//     gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
+//                 W_iz1->buf_gpu, hidden0->buf_gpu, b_iz1->buf_gpu,
+//                 W_hz1->buf_gpu, hidden1->buf_gpu, b_hz1->buf_gpu,
+//                 z1->buf_gpu);
 
-    gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
-                W_in1->buf_gpu, hidden0->buf_gpu, b_in1->buf_gpu,
-                W_hn1->buf_gpu, hidden1->buf_gpu, b_hn1->buf_gpu,
-                r1->buf_gpu, n1->buf_gpu);
+//     gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM, HIDDEN_DIM,
+//                 W_in1->buf_gpu, hidden0->buf_gpu, b_in1->buf_gpu,
+//                 W_hn1->buf_gpu, hidden1->buf_gpu, b_hn1->buf_gpu,
+//                 r1->buf_gpu, n1->buf_gpu);
 
-    //TODO: is it able to overwrite hidden0?
-    gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z1->buf_gpu, n1->buf_gpu,
-                                              hidden1->buf_gpu);
+//     //TODO: is it able to overwrite hidden0?
+//     gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z1->buf_gpu, n1->buf_gpu,
+//                                               hidden1->buf_gpu);
     
-    //////////////////////////////////////////////
-    /* Linear: input : hidden1                  */
-    //////////////////////////////////////////////
-    gpu_linear<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM,
-    W_fc->buf_gpu, hidden1->buf_gpu, b_fc->buf_gpu,f->buf_gpu);
-    softmax_kernel<<<N, NUM_CHAR>>>(f->buf_gpu, char_prob->buf_gpu, N);
+//     //////////////////////////////////////////////
+//     /* Linear: input : hidden1                  */
+//     //////////////////////////////////////////////
+//     gpu_linear<<<gridDim_3, blockDim_3>>>(N, HIDDEN_DIM,
+//     W_fc->buf_gpu, hidden1->buf_gpu, b_fc->buf_gpu,f->buf_gpu);
+//     softmax_kernel<<<N, NUM_CHAR>>>(f->buf_gpu, char_prob->buf_gpu, N);
 
-    //////////////////////////////////////////////
-    /* Move results to CPU and finalize         */
-    //////////////////////////////////////////////
+//     //////////////////////////////////////////////
+//     /* Move results to CPU and finalize         */
+//     //////////////////////////////////////////////
 
-    dim3 blockDim_rand(1024);
-    dim3 gridDim_rand((N+1023)/1024);
-    gpu_random_select<<<gridDim_rand, blockDim_rand>>>(
-      N, l, char_prob->buf_gpu, rfloats->buf_gpu, g_output, input->buf_gpu
-    );
+//     dim3 blockDim_rand(1024);
+//     dim3 gridDim_rand((N+1023)/1024);
+//     gpu_random_select<<<gridDim_rand, blockDim_rand>>>(
+//       N, l, char_prob->buf_gpu, rfloats->buf_gpu, g_output, input->buf_gpu
+//     );
   }
-cudaDeviceSynchronize();
-CHECK_CUDA(cudaGetLastError());
-CHECK_CUDA(cudaMemcpy(output, g_output, N * (MAX_LEN+1) * sizeof(char),
-                        cudaMemcpyDeviceToHost));
+// cudaDeviceSynchronize();
+// CHECK_CUDA(cudaGetLastError());
+// CHECK_CUDA(cudaMemcpy(output, g_output, N * (MAX_LEN+1) * sizeof(char),
+//                         cudaMemcpyDeviceToHost));
 
 }
 

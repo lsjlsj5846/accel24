@@ -383,40 +383,41 @@ int _r = blockIdx.y * blockDim.y + threadIdx.y;
 int _c = blockIdx.x * blockDim.x + threadIdx.x;
 
 float _sum = 0.0;
+// if () return;
 
 //TODO: Check!! is ++K right?
-// #pragma unroll 128
+// // #pragma unroll 128
 for (int k1=0; k1<K1; ++k1) 
-{_sum += _W1[_r * HIDDEN_DIM + k1] * _X1[k1 * K1 + _c];}
+{_sum += _W1[_r * K1 + k1] * _X1[k1 * N + _c];}
 
-// #pragma unroll 128
+// // #pragma unroll 128
 for (int k2=0; k2<K2; ++k2) 
-{_sum += _W2[_r * HIDDEN_DIM + k2] * _X2[k2 * K2 + _c];}
+{_sum += _W2[_r * K2 + k2] * _X2[k2 * N + _c];}
 _sum += _b1[_r] + _b2[_r];
 _output[_r * N + _c] += 1.0 / (1.0 + expf(-_sum));
 }
 
 __global__ void gpu_mmbrmmbt(const int N, const int K1, const int K2,
-                           float* W1, float* X1, float* b1,
-                           float* W2, float* X2, float* b2,
-                           float* r1, float* output
+                           float* _W1, float* _X1, float* _b1,
+                           float* _W2, float* _X2, float* _b2,
+                           float* _r1, float* _output
                            ){
-int r = blockIdx.y * blockDim.y + threadIdx.y;
-int c = blockIdx.x * blockDim.x + threadIdx.x;
+int _r = blockIdx.y * blockDim.y + threadIdx.y;
+int _c = blockIdx.x * blockDim.x + threadIdx.x;
 
-float sum = 0.0;
+float _sum = 0.0;
 
 //TODO: Check!! is ++K right?
 // #pragma unroll 128
-for (int k=0; k<K2; ++k) 
-{sum += W2[r * HIDDEN_DIM + k] * X2[k * K2 + c];}
-sum *= r1[c];
+for (int _k=0; _k<K2; ++_k) 
+{_sum += _W2[_r * K2 + _k] * _X2[_k * N + _c];}
+_sum *= _r1[_c];
 // #pragma unroll 128
-for (int k=0; k<K1; ++k) 
-{sum += W1[r * HIDDEN_DIM + k] * X1[k * K1 + c];}
+for (int _k=0; _k<K1; ++_k) 
+{_sum += _W1[_r * K1 + _k] * _X1[_k * N + _c];}
 
-sum += b1[r] + b2[r];
-output[r * N + c] += _gpu_tanh(sum);
+_sum += _b1[_r] + _b2[_r];
+_output[_r * N + _c] += _gpu_tanh(_sum);
 }
 
 __global__ void gpu_compute_h(const int N, float* zt, float* nt,
@@ -549,7 +550,7 @@ void namegen(int N, float *random_floats, char *output) {
                 z0->buf_gpu);
     cudaDeviceSynchronize();
     CHECK_CUDA(cudaGetLastError());
-    
+
     gpu_mmbrmmbt<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
                 W_in0->buf_gpu, emb_out->buf_gpu, b_in0->buf_gpu,
                 W_hn0->buf_gpu, hidden0->buf_gpu, b_hn0->buf_gpu,
@@ -558,8 +559,10 @@ void namegen(int N, float *random_floats, char *output) {
     CHECK_CUDA(cudaGetLastError());
 
 //     //TODO: is it able to overwrite hidden0?
-//     gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z0->buf_gpu, n0->buf_gpu,
-//                                               hidden0->buf_gpu);
+  gpu_compute_h<<<gridDim_3, blockDim_3>>>(N, z0->buf_gpu, n0->buf_gpu,
+                                            hidden0->buf_gpu);
+  cudaDeviceSynchronize();
+  CHECK_CUDA(cudaGetLastError());
 //     //////////////////////////////////////////////
 //     /* Layer 2: input : hidden0 & hid: hidden 1*/
 //     //////////////////////////////////////////////

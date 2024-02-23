@@ -368,7 +368,7 @@ __global__ void gpu_embedding(const int N, const float *i_buf_gpu,
   int _r = blockIdx.y * blockDim.y + threadIdx.y;
   int _c = blockIdx.x * blockDim.x + threadIdx.x;
 
-  // if (r>= EMBEDDING_DIM || c >= N) return;
+  if (_r>= EMBEDDING_DIM || _c >= N) return;
   // TODO: vernerable due to the typecasting
   // o_buf_gpu[r * N + c] = w_buf_gpu[(int)(i_buf_gpu[r]) * N + c];
   o_buf_gpu[_r*N + _c] = w_buf_gpu[(int)(i_buf_gpu[_c]) * EMBEDDING_DIM + _r];
@@ -379,22 +379,35 @@ __global__ void gpu_mmbmmbs(const int N, const int K1, const int K2,
                            float* _W2, float* _X2, float* _b2,
                            float* _output
                            ){
-int _r = blockIdx.y * blockDim.y + threadIdx.y;
-int _c = blockIdx.x * blockDim.x + threadIdx.x;
+          
+  int _r = blockIdx.y * blockDim.y + threadIdx.y;
+  int _c = blockIdx.x * blockDim.x + threadIdx.x;
+  if (_r == 0 && _c == 0 ){
+    printf("%f %f %f %f %f %f %f\n", _W1[0], *_X1, *_b1, *_W2, *_X2, *_b2, *_output);
 
-float _sum = 0.0;
-// if () return;
+  }
+  if (_r >= HIDDEN_DIM || _c >= N) return;
+  float _sum = 0.0;
+  // if () return;
 
-//TODO: Check!! is ++K right?
-// // #pragma unroll 128
-for (int k1=0; k1<K1; ++k1) 
-{_sum += _W1[_r * K1 + k1] * _X1[k1 * N + _c];}
+  //TODO: Check!! is ++K right?
+  // // #pragma unroll 128
+  for (int kk=0; kk<K1; ++kk) 
+  {
+    _sum += _W1[_r * K1 + kk] * _X1[kk * N + _c];
+  
+    if (_r == 0 && _c == 0 ){
+    printf("kk=%d W1=%f X1=%f\n", kk, _W1[_r * K1 + kk], _X1[kk*N+_c]);
 
-// // #pragma unroll 128
-for (int k2=0; k2<K2; ++k2) 
-{_sum += _W2[_r * K2 + k2] * _X2[k2 * N + _c];}
-_sum += _b1[_r] + _b2[_r];
-_output[_r * N + _c] += 1.0 / (1.0 + expf(-_sum));
+  }
+    }
+
+  // // // #pragma unroll 128
+  // for (int k2=0; k2<K2; ++k2) 
+  // {_sum += _W2[_r * K2 + k2] * _X2[k2 * N + _c];}
+  // _sum += _b1[_r] + _b2[_r];
+  // _output[_r * N + _c] = 1.0 / (1.0 + expf(-_sum));
+  _output[_r * N + _c] = _sum;
 }
 
 __global__ void gpu_mmbrmmbt(const int N, const int K1, const int K2,
@@ -402,22 +415,22 @@ __global__ void gpu_mmbrmmbt(const int N, const int K1, const int K2,
                            float* _W2, float* _X2, float* _b2,
                            float* _r1, float* _output
                            ){
-int _r = blockIdx.y * blockDim.y + threadIdx.y;
-int _c = blockIdx.x * blockDim.x + threadIdx.x;
+  int _r = blockIdx.y * blockDim.y + threadIdx.y;
+  int _c = blockIdx.x * blockDim.x + threadIdx.x;
 
-float _sum = 0.0;
+  float _sum = 0.0;
 
-//TODO: Check!! is ++K right?
-// #pragma unroll 128
-for (int _k=0; _k<K2; ++_k) 
-{_sum += _W2[_r * K2 + _k] * _X2[_k * N + _c];}
-_sum *= _r1[_c];
-// #pragma unroll 128
-for (int _k=0; _k<K1; ++_k) 
-{_sum += _W1[_r * K1 + _k] * _X1[_k * N + _c];}
+  //TODO: Check!! is ++K right?
+  // #pragma unroll 128
+  for (int _k=0; _k<K2; ++_k) 
+  {_sum += _W2[_r * K2 + _k] * _X2[_k * N + _c];}
+  _sum *= _r1[_c];
+  // #pragma unroll 128
+  for (int _k=0; _k<K1; ++_k) 
+  {_sum += _W1[_r * K1 + _k] * _X1[_k * N + _c];}
 
-_sum += _b1[_r] + _b2[_r];
-_output[_r * N + _c] += _gpu_tanh(_sum);
+  _sum += _b1[_r] + _b2[_r];
+  _output[_r * N + _c] += _gpu_tanh(_sum);
 }
 
 __global__ void gpu_compute_h(const int N, float* zt, float* nt,
@@ -537,25 +550,29 @@ void namegen(int N, float *random_floats, char *output) {
     
     dim3 blockDim_3(32,32);
     dim3 gridDim_3( (N + 31)/32, (HIDDEN_DIM+31)/32);
+    
     gpu_mmbmmbs<<<gridDim_3, blockDim_3>>>(N, EMBEDDING_DIM, HIDDEN_DIM,
                 W_ir0->buf_gpu, emb_out->buf_gpu, b_ir0->buf_gpu,
                 W_hr0->buf_gpu, hidden0->buf_gpu, b_hr0->buf_gpu,
                 r0->buf_gpu);
-    cudaDeviceSynchronize();
+    CHECK_CUDA(cudaDeviceSynchronize());
+    exit(0);
+    
     CHECK_CUDA(cudaGetLastError());
 
     if (l==0){
-      size_t _to_print_size = N * HIDDEN_DIM;
+      size_t _to_print_size = HIDDEN_DIM * N;
       CHECK_CUDA(cudaMallocHost(&_mat_to_print, sizeof(float) * _to_print_size));
       CHECK_CUDA(cudaMemcpy(_mat_to_print, r0->buf_gpu, 
       sizeof(float) * _to_print_size, cudaMemcpyDeviceToHost));
       printf("\n");
-      for (int _j =10; _j<15; _j++){
-        for (int _i=10; _i < 15; _i++){
-          printf("%f ,", _mat_to_print[_i *N + _j]);
+      for (int _j =0; _j<HIDDEN_DIM; _j++){
+        for (int _i=0; _i < N; _i++){
+          printf("m[%d][%d] = %f\n", _i, _j, _mat_to_print[_i * N + _j]);
         }
         printf("\n");
       }
+      exit(0);
     }
 
     // dim3 blockDim_4(32,32);
